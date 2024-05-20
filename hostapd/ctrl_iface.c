@@ -19,7 +19,9 @@
 #include <netinet/ip.h>
 #endif /* CONFIG_TESTING_OPTIONS */
 
+#ifndef __ZEPHYR__
 #include <sys/un.h>
+#endif
 #include <sys/stat.h>
 #include <stddef.h>
 
@@ -78,6 +80,7 @@
 #define HOSTAPD_GLOBAL_CTRL_IFACE_PORT_LIMIT	50
 #endif /* CONFIG_CTRL_IFACE_UDP */
 
+#ifndef __ZEPHYR__
 static void hostapd_ctrl_iface_send(struct hostapd_data *hapd, int level,
 				    enum wpa_msg_type type,
 				    const char *buf, size_t len);
@@ -106,6 +109,7 @@ static int hostapd_ctrl_iface_level(struct hostapd_data *hapd,
 {
 	return ctrl_iface_level(&hapd->ctrl_dst, from, fromlen, level);
 }
+#endif
 
 
 static int hostapd_ctrl_iface_new_sta(struct hostapd_data *hapd,
@@ -3501,12 +3505,19 @@ static int hostapd_ctrl_iface_driver_cmd(struct hostapd_data *hapd, char *cmd,
 }
 #endif /* ANDROID */
 
-
+#ifdef __ZEPHYR__
+int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
+				       char *buf, char *reply,
+				       int reply_size,
+				       struct sockaddr_storage *from,
+				       socklen_t fromlen)
+#else
 static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 					      char *buf, char *reply,
 					      int reply_size,
 					      struct sockaddr_storage *from,
 					      socklen_t fromlen)
+#endif
 {
 	int reply_len, res;
 
@@ -3567,6 +3578,7 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	} else if (os_strncmp(buf, "STA-NEXT ", 9) == 0) {
 		reply_len = hostapd_ctrl_iface_sta_next(hapd, buf + 9, reply,
 							reply_size);
+#ifndef __ZEPHYR__
 	} else if (os_strcmp(buf, "ATTACH") == 0) {
 		if (hostapd_ctrl_iface_attach(hapd, from, fromlen, NULL))
 			reply_len = -1;
@@ -3580,6 +3592,7 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 		if (hostapd_ctrl_iface_level(hapd, from, fromlen,
 						    buf + 6))
 			reply_len = -1;
+#endif
 	} else if (os_strncmp(buf, "NEW_STA ", 8) == 0) {
 		if (hostapd_ctrl_iface_new_sta(hapd, buf + 8))
 			reply_len = -1;
@@ -4035,7 +4048,7 @@ static int hostapd_ctrl_iface_receive_process(struct hostapd_data *hapd,
 	return reply_len;
 }
 
-
+#ifndef __ZEPHYR__
 static void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 				       void *sock_ctx)
 {
@@ -4121,7 +4134,6 @@ done:
 	os_free(reply);
 }
 
-
 #ifndef CONFIG_CTRL_IFACE_UDP
 static char * hostapd_ctrl_iface_path(struct hostapd_data *hapd)
 {
@@ -4154,10 +4166,11 @@ static void hostapd_ctrl_iface_msg_cb(void *ctx, int level,
 		return;
 	hostapd_ctrl_iface_send(hapd, level, type, txt, len);
 }
-
+#endif
 
 int hostapd_ctrl_iface_init(struct hostapd_data *hapd)
 {
+#ifndef __ZEPHYR__
 #ifdef CONFIG_CTRL_IFACE_UDP
 	int port = HOSTAPD_CTRL_IFACE_PORT;
 	char p[32] = { 0 };
@@ -4402,11 +4415,15 @@ fail:
 	}
 	return -1;
 #endif /* CONFIG_CTRL_IFACE_UDP */
+#else
+    return 0;
+#endif
 }
 
 
 void hostapd_ctrl_iface_deinit(struct hostapd_data *hapd)
 {
+#ifndef __ZEPHYR__
 	struct wpa_ctrl_dst *dst, *prev;
 
 	if (hapd->ctrl_sock > -1) {
@@ -4447,9 +4464,11 @@ void hostapd_ctrl_iface_deinit(struct hostapd_data *hapd)
 	l2_packet_deinit(hapd->l2_test);
 	hapd->l2_test = NULL;
 #endif /* CONFIG_TESTING_OPTIONS */
+#endif
 }
 
 
+#ifndef __ZEPHYR__
 static int hostapd_ctrl_iface_add(struct hapd_interfaces *interfaces,
 				  char *buf)
 {
@@ -4514,6 +4533,7 @@ static void hostapd_ctrl_iface_flush(struct hapd_interfaces *interfaces)
 	dpp_global_clear(interfaces->dpp);
 #endif /* CONFIG_DPP */
 }
+#endif
 
 
 #ifdef CONFIG_FST
@@ -4569,7 +4589,7 @@ hostapd_global_ctrl_iface_fst_detach(struct hapd_interfaces *interfaces,
 
 #endif /* CONFIG_FST */
 
-
+#ifndef __ZEPHYR__
 static struct hostapd_data *
 hostapd_interfaces_get_hapd(struct hapd_interfaces *interfaces,
 			    const char *ifname)
@@ -4949,7 +4969,6 @@ static char * hostapd_global_ctrl_iface_path(struct hapd_interfaces *interface)
 }
 #endif /* CONFIG_CTRL_IFACE_UDP */
 
-
 int hostapd_global_ctrl_iface_init(struct hapd_interfaces *interface)
 {
 #ifdef CONFIG_CTRL_IFACE_UDP
@@ -5189,7 +5208,6 @@ void hostapd_global_ctrl_iface_deinit(struct hapd_interfaces *interfaces)
 		os_free(dst);
 }
 
-
 static int hostapd_ctrl_check_event_enabled(struct wpa_ctrl_dst *dst,
 					    const char *buf)
 {
@@ -5286,5 +5304,5 @@ static void hostapd_ctrl_iface_send(struct hostapd_data *hapd, int level,
 			NULL, level, buf, len);
 	}
 }
-
+#endif
 #endif /* CONFIG_NATIVE_WINDOWS */
