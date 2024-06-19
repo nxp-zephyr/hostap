@@ -401,7 +401,7 @@ void wpa_drv_zep_event_mac_changed(struct zep_drv_if_ctx *if_ctx)
 	const struct net_linkaddr *link_addr = NULL;
 
 	if (if_ctx->hapd) {
-		link_addr = net_if_get_link_addr(net_if_get_wifi_uap());
+		link_addr = net_if_get_link_addr(net_if_get_wifi_sap());
 		os_memcpy(if_ctx->hapd->own_addr, link_addr->addr, link_addr->len);
 	}
 	else
@@ -1269,7 +1269,7 @@ static void *wpa_drv_zep_hapd_init(struct hostapd_data *hapd, struct wpa_init_pa
 	const struct net_linkaddr *link_addr            = NULL;
 	struct zep_hostapd_dev_callbk_fns callbk_fns;
 
-	device = net_if_get_device(net_if_get_wifi_uap());
+	device = net_if_get_device(net_if_get_wifi_sap());
 	if (!device) {
 		wpa_printf(MSG_ERROR, "%s: Interface %s not found", __func__, params->ifname);
 		goto out;
@@ -1285,7 +1285,7 @@ static void *wpa_drv_zep_hapd_init(struct hostapd_data *hapd, struct wpa_init_pa
 
 	if_ctx->dev_ctx = device;
 	if_ctx->drv_ctx = params->global_priv;
-	link_addr = net_if_get_link_addr(net_if_get_wifi_uap());
+	link_addr = net_if_get_link_addr(net_if_get_wifi_sap());
 	os_memcpy(params->own_addr, link_addr->addr, link_addr->len);
 
 	dev_ops = get_dev_ops(if_ctx->dev_ctx);
