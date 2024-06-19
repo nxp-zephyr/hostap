@@ -200,7 +200,13 @@ struct zep_wpa_supp_dev_callbk_fns {
 	void (*mac_changed)(struct zep_drv_if_ctx *if_ctx);
 
 	void (*ecsa_complete)(struct zep_drv_if_ctx *if_ctx,
-              union wpa_event_data *event);
+			      union wpa_event_data *event);
+
+	void (*dfs_cac_started)(struct zep_drv_if_ctx *if_ctx,
+				union wpa_event_data *event);
+
+	void (*dfs_cac_finished)(struct zep_drv_if_ctx *if_ctx,
+				 union wpa_event_data *event);
 
 };
 
