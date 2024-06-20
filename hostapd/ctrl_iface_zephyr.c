@@ -17,7 +17,7 @@ void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 	int res;
 	char *reply = NULL;
 	int reply_len = 0;
-	const int reply_size = 4096;
+	const int reply_size = MAX_CTRL_MSG_LEN;
 
 	res = recv(sock, buf, MAX_CTRL_MSG_LEN, 0);
 	if (res < 0) {
@@ -43,14 +43,22 @@ void hostapd_ctrl_iface_receive(int sock, void *eloop_ctx,
 	while (*pos == ' ')
 		pos++;
 
-	reply_len = hostapd_ctrl_iface_receive_process(hapd, pos, reply, reply_size, NULL, 0);
-	if (reply) {
-		send(sock, reply, reply_len, 0);
-	} else if (reply_len == 1) {
+	reply = os_malloc(reply_size);
+	if (reply == NULL) {
 		send(sock, "FAIL\n", 5, 0);
-	} else if (reply_len == 3) {
-		send(sock, "OK\n", 3, 0);
+		wpa_printf(MSG_ERROR, "hostapd cli malloc fail for reply buffer");
+		return;
 	}
+
+	reply_len = hostapd_ctrl_iface_receive_process(hapd, pos, reply, reply_size, NULL, 0);
+	if (reply_len > 0) {
+		send(sock, reply, reply_len, 0);
+	} else if (reply_len == 0) {
+		send(sock, "OK\n", 3, 0);
+	} else if (reply_len < 0) {
+		send(sock, "FAIL\n", 5, 0);
+	}
+	os_free(reply);
 }
 
 
