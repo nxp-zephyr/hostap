@@ -213,6 +213,11 @@ int hostapd_ctrl_command(struct wpa_ctrl *ctrl, const char *cmd)
 	return _wpa_ctrl_command(ctrl, cmd, 0, NULL);
 }
 
+int zephyr_hostapd_cli_cmd_resp(const char *cmd, char *resp)
+{
+	return _wpa_ctrl_command(hapd_ctrl_conn, cmd, 1, resp);
+}
+
 int zephyr_hostapd_ctrl_zephyr_cmd(int argc, const char *argv[])
 {
 	return hostapd_request(hapd_ctrl_conn, argc , (char **) argv);
