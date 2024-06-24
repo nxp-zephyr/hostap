@@ -154,7 +154,7 @@ struct hostapd_sae_commit_queue {
  * struct hostapd_data - hostapd per-BSS data structure
  */
 struct hostapd_data {
-#if defined(__ZEPHYR__) && defined(CONFIG_HOSTAPD)
+#if defined(__ZEPHYR__) && defined(HOSTAPD)
 	/** Zephyr has coexistence of hostapd and wpa_supplicant.
 	 * To verify if ctx is hostapd or wpa_supplicant in wpa_msg,
 	 * this should be the first parameter
