@@ -56,7 +56,6 @@ void *pvPortCalloc(size_t num, size_t size); /*Calloc for HEAP3.*/
 #define MBEDTLS_CIPHER_MODE_CBC_ENABLED
 #define MBEDTLS_CIPHER_PADDING_PKCS7
 #define PSA_CRYPTO_DRIVER_ELS_PKC
-#define PSA_CRYPTO_DRIVER_THREAD_EN
 
 #define MBEDTLS_PSA_ACCEL_ALG_MD5
 //#define MBEDTLS_PSA_ACCEL_ALG_SHA_1
@@ -65,6 +64,11 @@ void *pvPortCalloc(size_t num, size_t size); /*Calloc for HEAP3.*/
 #define MBEDTLS_PSA_ACCEL_ALG_SHA_384
 #define MBEDTLS_PSA_ACCEL_ALG_SHA_512
 #define MBEDTLS_PSA_ACCEL_ALG_RIPEMD160
+
+#define PSA_WANT_ALG_ECDSA 1
+#define PSA_WANT_ALG_ECDSA_ANY 1
+#define PSA_WANT_ALG_RSA_PKCS1V15_SIGN 1
+#define PSA_WANT_ALG_RSA_PKCS1V15_SIGN_RAW 1
 #endif
 
 /**************************** MCUX CSS_PKC end ****************************************/
