@@ -50,7 +50,8 @@ void *pvPortCalloc(size_t num, size_t size); /*Calloc for HEAP3.*/
 #endif /* USE_RTOS*/
 #endif /* __ZEPHYR__ */
 
-#ifdef CONFIG_WIFI_NM_WPA_SUPPLICANT_CRYPTO_MBEDTLS_PSA
+#if defined(CONFIG_WIFI_NM_WPA_SUPPLICANT_CRYPTO_MBEDTLS_PSA) && \
+    !defined(CONFIG_BUILD_WITH_TFM)
 #define MBEDTLS_CTR_DRBG_ENABLED
 #define MBEDTLS_CIPHER_AES_ENABLED
 #define MBEDTLS_CIPHER_MODE_CBC_ENABLED
@@ -2873,6 +2874,7 @@ void *pvPortCalloc(size_t num, size_t size); /*Calloc for HEAP3.*/
  */
 #define MBEDTLS_HMAC_DRBG_C
 
+#ifndef CONFIG_BUILD_WITH_TFM
 /**
  * \def MBEDTLS_NIST_KW_C
  *
@@ -2885,6 +2887,7 @@ void *pvPortCalloc(size_t num, size_t size); /*Calloc for HEAP3.*/
  * Requires: MBEDTLS_AES_C and MBEDTLS_CIPHER_C
  */
 #define MBEDTLS_NIST_KW_C
+#endif
 
 /**
  * \def MBEDTLS_MD_C
@@ -4000,6 +4003,7 @@ void *pvPortCalloc(size_t num, size_t size); /*Calloc for HEAP3.*/
 
 #define MBEDTLS_ALLOW_PRIVATE_ACCESS
 
+#ifndef CONFIG_BUILD_WITH_TFM
 #define MBEDTLS_CTR_DRBG_ENABLED
 #define MBEDTLS_CIPHER_AES_ENABLED
 #define MBEDTLS_CIPHER_MODE_CBC_ENABLED
@@ -4013,6 +4017,7 @@ void *pvPortCalloc(size_t num, size_t size); /*Calloc for HEAP3.*/
 //#define MBEDTLS_MCUX_ENTROPY
 #define MBEDTLS_ENTROPY_HARDWARE_ALT
 #undef MBEDTLS_NO_DEFAULT_ENTROPY_SOURCES
+#endif /* CONFIG_BUILD_WITH_TFM */
 
 /*
  * CBC-MAC is not yet supported via the PSA API in Mbed TLS.
