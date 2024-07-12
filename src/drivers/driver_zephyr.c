@@ -536,6 +536,9 @@ void wpa_drv_zep_event_proc_assoc_resp(struct zep_drv_if_ctx *if_ctx,
 				       unsigned int status)
 {
 	if (status != WLAN_STATUS_SUCCESS) {
+		if (if_ctx->ft_roaming) {
+			if_ctx->ft_roaming = false;
+		}
 		wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
 				EVENT_ASSOC_REJECT,
 				event);
@@ -1540,6 +1543,10 @@ static int wpa_drv_zep_deauthenticate(void *priv, const u8 *addr,
 
 	if_ctx = priv;
 
+	if (if_ctx->ft_roaming) {
+		if_ctx->ft_roaming = false;
+	}
+
 	dev_ops = get_dev_ops(if_ctx->dev_ctx);
 	ret = dev_ops->deauthenticate(if_ctx->dev_priv, addr, reason_code);
 	if (ret) {
@@ -1568,6 +1575,11 @@ static int wpa_drv_zep_authenticate(void *priv,
 
 	if_ctx = priv;
 
+	if_ctx->ft_roaming = false;
+
+	if (params->auth_alg == WPA_AUTH_ALG_FT) {
+		if_ctx->ft_roaming = true;
+	}
 	dev_ops = get_dev_ops(if_ctx->dev_ctx);
 
 	os_memcpy(if_ctx->ssid, params->ssid, params->ssid_len);
@@ -1817,7 +1829,11 @@ static int wpa_drv_zep_set_supp_port(void *priv,
 
 #ifdef CONFIG_NET_DHCPV4
 	if (authorized) {
-		net_dhcpv4_restart(iface);
+		if (if_ctx->ft_roaming == false) {
+			net_dhcpv4_restart(iface);
+		} else {
+			if_ctx->ft_roaming = false;
+		}
 	}
 #endif
 
