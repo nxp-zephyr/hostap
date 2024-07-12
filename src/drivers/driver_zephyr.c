@@ -973,6 +973,11 @@ static void wpa_drv_zep_event_ecsa_complete(struct zep_drv_if_ctx *if_ctx, union
 	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx, EVENT_CH_SWITCH, event);
 }
 
+static void wpa_drv_zep_event_signal_change(struct zep_drv_if_ctx *if_ctx, union wpa_event_data *event)
+{
+	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx, EVENT_SIGNAL_CHANGE, event);
+}
+
 static void wpa_drv_zep_event_dfs_cac_started(struct zep_drv_if_ctx *if_ctx, union wpa_event_data *event)
 {
 #ifdef CONFIG_WIFI_NM_HOSTAPD_AP
@@ -1232,6 +1237,7 @@ static void *wpa_drv_zep_init(void *ctx,
 	callbk_fns.chan_list_changed = wpa_drv_zep_event_chan_list_changed;
 	callbk_fns.mac_changed = wpa_drv_zep_event_mac_changed;
 	callbk_fns.ecsa_complete = wpa_drv_zep_event_ecsa_complete;
+	callbk_fns.signal_change = wpa_drv_zep_event_signal_change;
 
 	if_ctx->dev_priv = dev_ops->init(if_ctx,
 					 ifname,
