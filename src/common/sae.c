@@ -384,13 +384,6 @@ static int sae_derive_pwe_ecc(struct sae_data *sae, const u8 *addr1,
 		found |= res * 0xff;
 		wpa_printf(MSG_DEBUG, "SAE: pwd-seed result %d found=0x%02x",
 			   res, found);
-#ifdef CONFIG_SAE_PWE_NS
-		if (found)
-			/* For low-performance processors, reduce loop iterations of PWE
-			 * derivation to reduce the time to generate PWE.
-			 */
-			break;
-#endif /* CONFIG_SAE_PWE_NS */
 	}
 
 	if (!found) {
