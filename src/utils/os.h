@@ -9,6 +9,11 @@
 #ifndef OS_H
 #define OS_H
 
+#if defined(__ZEPHYR__)
+#ifndef FILE
+typedef __FILE FILE;
+#endif
+#endif
 typedef long os_time_t;
 
 /**
