@@ -171,7 +171,6 @@ l2_packet_init(const char *ifname, const u8 *own_addr, unsigned short protocol,
 	 * Network packet priority settings described in IEEE 802.1Q Annex I.1
 	 * The high priority (>= NET_PRIORITY_CA, 3) packet will be pushed directly to network driver
 	 * and will skip the traffic class queues.(Setting a priority outside the range 3 to 6.)
-	 * NOTE: This will only be true if NET_CONTEXT_PRIORITY and NET_TC_SKIP_FOR_HIGH_PRIO are enabled.
 	 */
 	if (IS_ENABLED(CONFIG_NET_CONTEXT_PRIORITY)) {
 		uint8_t priority = 6;

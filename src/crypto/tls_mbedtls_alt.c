@@ -362,10 +362,10 @@ struct tls_conf *tls_conf_init(void *tls_ctx)
     return tls_conf;
 }
 
-void tls_conf_deinit(struct tls_conf *tls_conf)
+struct tls_conf *tls_conf_deinit(struct tls_conf *tls_conf)
 {
     if (tls_conf == NULL || --tls_conf->refcnt != 0)
-        return;
+        return tls_conf;
 
     mbedtls_x509_crt_free(&tls_conf->ca_cert);
     mbedtls_x509_crt_free(&tls_conf->client_cert);
@@ -386,6 +386,7 @@ void tls_conf_deinit(struct tls_conf *tls_conf)
     os_free(tls_conf->check_cert_subject);
 #endif
     os_free(tls_conf);
+    return NULL;
 }
 
 mbedtls_ctr_drbg_context *crypto_mbedtls_ctr_drbg(void); /*(not in header)*/
@@ -416,10 +417,14 @@ __attribute_cold__ void *tls_init(const struct tls_config *conf)
 
 __attribute_cold__ void tls_deinit(void *tls_ctx)
 {
-    if (tls_ctx == NULL || --tls_ctx_global.refcnt != 0)
+    if (tls_ctx == NULL)
         return;
 
-    tls_conf_deinit(tls_ctx_global.tls_conf);
+    tls_ctx_global.tls_conf = tls_conf_deinit(tls_ctx_global.tls_conf);
+
+    if (--tls_ctx_global.refcnt != 0)
+        return;
+
     os_free(tls_ctx_global.ca_cert_file);
     os_free(tls_ctx_global.ocsp_stapling_response);
     char *openssl_ciphers; /*(allocated in tls_init())*/
@@ -1729,7 +1734,7 @@ static int tls_mbedtls_set_params(struct tls_conf *tls_conf, const struct tls_co
     int ret = mbedtls_ssl_config_defaults(
         &tls_conf->conf, tls_ctx_global.tls_conf ? MBEDTLS_SSL_IS_SERVER : MBEDTLS_SSL_IS_CLIENT,
         MBEDTLS_SSL_TRANSPORT_STREAM,
-        (tls_conf->flags & TLS_CONN_SUITEB) ? MBEDTLS_SSL_PRESET_SUITEB : MBEDTLS_SSL_PRESET_DEFAULT);
+        MBEDTLS_SSL_PRESET_DEFAULT);
     if (ret != 0)
     {
         elog(ret, "mbedtls_ssl_config_defaults");

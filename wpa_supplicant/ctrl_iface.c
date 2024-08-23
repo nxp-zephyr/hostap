@@ -63,6 +63,7 @@
 #include <net/if_ether.h>
 #elif defined(__ZEPHYR__)
 #include <zephyr/net/ethernet.h>
+#include <supp_events.h>
 #endif
 
 static int wpa_supplicant_global_iface_list(struct wpa_global *global,
@@ -8618,7 +8619,7 @@ static int wpas_ctrl_radio_work_show(struct wpa_supplicant *wpa_s,
 		int ret;
 
 		os_reltime_sub(&now, &work->time, &diff);
-		ret = os_snprintf(pos, end - pos, "%s@%s:%u:%u:%lld.%06lld\n",
+		ret = os_snprintf(pos, end - pos, "%s@%s:%u:%u:%ld.%06ld\n",
 				  work->type, work->wpa_s->ifname, work->freq,
 				  work->started, diff.sec, diff.usec);
 		if (os_snprintf_error(end - pos, ret))
@@ -10309,6 +10310,12 @@ static void wpas_ctrl_neighbor_rep_cb(void *ctx, struct wpabuf *neighbor_rep)
 		len -= 2 + nr_len;
 	}
 
+#ifdef __ZEPHYR__
+	supplicant_send_wifi_mgmt_event(wpa_s->ifname,
+					NET_EVENT_WIFI_CMD_NEIGHBOR_REP_COMPLETE,
+					(void *)wpa_s->current_ssid->ssid,
+					wpa_s->current_ssid->ssid_len);
+#endif
 out:
 	wpabuf_free(neighbor_rep);
 }

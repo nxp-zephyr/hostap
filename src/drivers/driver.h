@@ -6066,6 +6066,12 @@ union wpa_event_data {
 void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
 			  union wpa_event_data *data);
 
+#ifdef __ZEPHYR__
+void hostapd_event(void *ctx, enum wpa_event_type event,
+		   union wpa_event_data *data);
+void hostapd_event_eapol_rx(void *ctx, const u8 *src,
+			    const u8 *data, size_t data_len);
+#endif
 /**
  * wpa_supplicant_event_global - Report a driver event for wpa_supplicant
  * @ctx: Context pointer (wpa_s); this is the ctx variable registered
@@ -6079,6 +6085,10 @@ void wpa_supplicant_event(void *ctx, enum wpa_event_type event,
 void wpa_supplicant_event_global(void *ctx, enum wpa_event_type event,
 				 union wpa_event_data *data);
 
+#ifdef __ZEPHYR__
+void hostapd_event_global(void *ctx, enum wpa_event_type event,
+			  union wpa_event_data *data);
+#endif
 /*
  * The following inline functions are provided for convenience to simplify
  * event indication for some of the common events.
