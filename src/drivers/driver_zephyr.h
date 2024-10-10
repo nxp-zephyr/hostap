@@ -198,10 +198,6 @@ struct zep_wpa_supp_dev_callbk_fns {
 			union wpa_event_data *event);
 
 	void (*mac_changed)(struct zep_drv_if_ctx *if_ctx);
-
-	void (*ecsa_complete)(struct zep_drv_if_ctx *if_ctx,
-              union wpa_event_data *event);
-
 };
 
 #ifdef CONFIG_WIFI_NM_HOSTAPD_AP
