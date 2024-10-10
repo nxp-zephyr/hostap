@@ -152,7 +152,6 @@ int eap_register_methods(void)
 		ret = eap_peer_eke_register();
 #endif /* EAP_EKE */
 
-#ifndef HOSTAPD
 #ifdef EAP_SERVER_IDENTITY
 	if (ret == 0)
 		ret = eap_server_identity_register();
@@ -267,6 +266,6 @@ int eap_register_methods(void)
 	if (ret == 0)
 		ret = eap_server_pwd_register();
 #endif /* EAP_SERVER_PWD */
-#endif /* HOSTAPD */
+
 	return ret;
 }
