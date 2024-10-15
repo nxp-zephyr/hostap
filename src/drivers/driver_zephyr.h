@@ -139,7 +139,6 @@ struct zep_drv_if_ctx {
 
 	bool ft_roaming;
 	bool roaming;
-	struct wpa_driver_set_key_params *key_params;
 
 	unsigned int freq;
 	unsigned char ssid[SSID_MAX_LEN];
