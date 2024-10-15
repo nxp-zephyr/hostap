@@ -805,7 +805,7 @@ int des_encrypt(const u8 *clear, const u8 *key, u8 *cypher)
 #include <mbedtls/pkcs5.h>
 int pbkdf2_sha1(const char *passphrase, const u8 *ssid, size_t ssid_len, int iterations, u8 *buf, size_t buflen)
 {
-#ifdef CONFIG_WIFI_NM_WPA_SUPPLICANT_CRYPTO_MBEDTLS_PSA
+#if 0
     return pbkdf2_sha1_psa(MBEDTLS_MD_SHA1, (const u8 *)passphrase,
                            os_strlen(passphrase), ssid, ssid_len,
                            iterations, 32, buf) ? -1: 0;
