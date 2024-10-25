@@ -138,7 +138,6 @@ struct zep_drv_if_ctx {
 	bool scan_res2_get_in_prog;
 
 	bool ft_roaming;
-	bool roaming;
 	struct wpa_driver_set_key_params *key_params;
 
 	unsigned int freq;
