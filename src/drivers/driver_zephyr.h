@@ -138,7 +138,6 @@ struct zep_drv_if_ctx {
 	bool scan_res2_get_in_prog;
 
 	bool ft_roaming;
-	bool roaming;
 
 	unsigned int freq;
 	unsigned char ssid[SSID_MAX_LEN];
