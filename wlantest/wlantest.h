@@ -121,8 +121,6 @@ struct wlantest_sta {
 
 	u16 sae_group;
 	u16 owe_group;
-
-	enum rsn_selection_variant rsn_selection;
 };
 
 struct wlantest_tdls {
@@ -160,8 +158,6 @@ struct wlantest_bss {
 	u8 rsnie[257];
 	u8 rsnxe[254]; /* RSNXE data */
 	size_t rsnxe_len;
-	u8 rsnxoe[251]; /* RSNXOE data */
-	size_t rsnxoe_len;
 	u8 osenie[257];
 	int proto;
 	int pairwise_cipher;
