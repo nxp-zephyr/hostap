@@ -1023,8 +1023,6 @@ static void wpa_supplicant_process_1_of_4(struct wpa_sm *sm,
 				"WPA: Failed to get random data for SNonce");
 			goto failed;
 		}
-		if (sm->rsn_override != RSN_OVERRIDE_NOT_USED)
-			rsn_set_snonce_cookie(sm->snonce);
 		sm->renew_snonce = 0;
 		wpa_hexdump(MSG_DEBUG, "WPA: Renewed SNonce",
 			    sm->snonce, WPA_NONCE_LEN);
