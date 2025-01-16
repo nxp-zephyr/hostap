@@ -1369,12 +1369,6 @@ struct wpa_driver_associate_params {
 	 * mld_params - MLD association parameters
 	 */
 	struct wpa_driver_mld_params mld_params;
-
-
-	/**
-	 * rsn_overriding - wpa_supplicant RSN overriding support
-	 */
-	bool rsn_overriding;
 };
 
 enum hide_ssid {
