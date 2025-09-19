@@ -58,6 +58,10 @@
 #include <mbedtls/ssl_ticket.h>
 #include <mbedtls/x509.h>
 #include <mbedtls/x509_crt.h>
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3)
+#include <../library/ssl_misc.h>
+#include <../library/ssl_tls13_keys.h>
+#endif
 
 extern int (*hostap_rng_fn)(void*, unsigned char*, size_t);
 extern void* hostap_rng_ctx(void);
@@ -73,17 +77,7 @@ extern void* hostap_rng_ctx(void);
 #define tls_mbedtls_d(...)
 #endif /* MBEDTLS_DEBUG_C */
 
-#if MBEDTLS_VERSION_NUMBER >= 0x02040000 /* mbedtls 2.4.0 */
 #include <mbedtls/net_sockets.h>
-#else
-#include <mbedtls/net.h>
-#endif
-
-#if MBEDTLS_VERSION_NUMBER < 0x03020000 /* mbedtls 3.2.0 */
-#define mbedtls_ssl_get_ciphersuite_id_from_ssl(ssl) \
-    ((ssl)->MBEDTLS_PRIVATE(session) ? (ssl)->MBEDTLS_PRIVATE(session)->MBEDTLS_PRIVATE(ciphersuite) : 0)
-#define mbedtls_ssl_ciphersuite_get_name(info) (info)->MBEDTLS_PRIVATE(name)
-#endif
 
 #include "crypto.h" /* sha256_vector() */
 #include "tls.h"
@@ -100,14 +94,7 @@ extern void* hostap_rng_ctx(void);
 #define MBEDTLS_EXPKEY_RAND_LEN 32
 #endif
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000 /* mbedtls 3.0.0 */
 static mbedtls_ssl_export_keys_t tls_connection_export_keys_cb;
-#elif MBEDTLS_VERSION_NUMBER >= 0x02120000 /* mbedtls 2.18.0 */
-static mbedtls_ssl_export_keys_ext_t tls_connection_export_keys_cb;
-#else                                      /*(not implemented; return error)*/
-#define mbedtls_ssl_tls_prf(a, b, c, d, e, f, g, h) (-1)
-typedef mbedtls_tls_prf_types int;
-#endif
 
 /* hostapd/wpa_supplicant provides forced_memzero(),
  * but prefer mbedtls_platform_zeroize() */
@@ -169,11 +156,7 @@ struct tls_conf
     u8 ca_cert_hash[SHA256_DIGEST_LENGTH];
 
     int *ciphersuites;                  /* list of ciphersuite ids for mbedtls_ssl_config */
-#if MBEDTLS_VERSION_NUMBER < 0x03010000 /* mbedtls 3.1.0 */
-    mbedtls_ecp_group_id *curves;
-#else
     uint16_t *curves; /* list of curve ids for mbedtls_ssl_config */
-#endif
 };
 
 struct tls_global
@@ -210,11 +193,7 @@ struct tls_connection
     mbedtls_tls_prf_types tls_prf_type;
     size_t expkey_keyblock_size;
     size_t expkey_secret_len;
-#if MBEDTLS_VERSION_NUMBER < 0x03000000 /* mbedtls 3.0.0 */
-    unsigned char expkey_secret[MBEDTLS_EXPKEY_FIXED_SECRET_LEN];
-#else
     unsigned char expkey_secret[48];
-#endif
     unsigned char expkey_randbytes[MBEDTLS_EXPKEY_RAND_LEN * 2];
 
     int read_alerts, write_alerts, failed;
@@ -469,7 +448,9 @@ void tls_connection_deinit(void *tls_ctx, struct tls_connection *conn)
     if (conn == NULL)
         return;
 
+#if !defined(MBEDTLS_SSL_PROTO_TLS1_3)
     if (conn->tls_prf_type)
+#endif
         tls_connection_deinit_expkey(conn);
 
 #ifdef TLS_MBEDTLS_SESSION_TICKETS
@@ -573,7 +554,9 @@ int tls_connection_shutdown(void *tls_ctx, struct tls_connection *conn)
     conn->push_buf    = NULL;
     conn->established = 0;
     conn->resumed     = 0;
+#if !defined(MBEDTLS_SSL_PROTO_TLS1_3)
     if (conn->tls_prf_type)
+#endif
         tls_connection_deinit_expkey(conn);
 
     /* RFE: prepare for session resumption? (see doc in crypto/tls.h) */
@@ -656,11 +639,7 @@ static int tls_mbedtls_ssl_setup(struct tls_connection *conn)
     }
 
     mbedtls_ssl_set_bio(&conn->ssl, conn, tls_push_func, tls_pull_func, NULL);
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000 /* mbedtls 3.0.0 */
     mbedtls_ssl_set_export_keys_cb(&conn->ssl, tls_connection_export_keys_cb, conn);
-#elif MBEDTLS_VERSION_NUMBER >= 0x02120000 /* mbedtls 2.18.0 */
-    mbedtls_ssl_conf_export_keys_ext_cb(&conn->tls_conf->conf, tls_connection_export_keys_cb, conn);
-#endif
     if (conn->verify_peer)
         mbedtls_ssl_set_verify(&conn->ssl, tls_mbedtls_verify_cb, conn);
 
@@ -712,7 +691,6 @@ static void tls_mbedtls_set_allowed_tls_vers(struct tls_conf *tls_conf, mbedtls_
         emsg(MSG_ERROR, "invalid tls_disable_tlsv* params; ignoring");
         return;
     }
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000 /* mbedtls 3.0.0 */
     /* mbed TLS 3.0.0 removes support for protocols < TLSv1.2 */
     if (min < 2 || max < 2)
     {
@@ -722,30 +700,13 @@ static void tls_mbedtls_set_allowed_tls_vers(struct tls_conf *tls_conf, mbedtls_
         if (max < 2)
             max = 2;
     }
-#endif
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03020000      /* mbedtls 3.2.0 */
     /* MBEDTLS_SSL_VERSION_TLS1_2 = 0x0303 */ /*!< (D)TLS 1.2 */
     /* MBEDTLS_SSL_VERSION_TLS1_3 = 0x0304 */ /*!< (D)TLS 1.3 */
     min = (min == 2) ? MBEDTLS_SSL_VERSION_TLS1_2 : MBEDTLS_SSL_VERSION_TLS1_3;
     max = (max == 2) ? MBEDTLS_SSL_VERSION_TLS1_2 : MBEDTLS_SSL_VERSION_TLS1_3;
     mbedtls_ssl_conf_min_tls_version(conf, min);
     mbedtls_ssl_conf_max_tls_version(conf, max);
-#else
-#ifndef MBEDTLS_SSL_MINOR_VERSION_4
-    if (min == 3)
-        min = 2;
-    if (max == 3)
-        max = 2;
-#endif
-    /* MBEDTLS_SSL_MINOR_VERSION_0  0 */ /*!< SSL v3.0 */
-    /* MBEDTLS_SSL_MINOR_VERSION_1  1 */ /*!< TLS v1.0 */
-    /* MBEDTLS_SSL_MINOR_VERSION_2  2 */ /*!< TLS v1.1 */
-    /* MBEDTLS_SSL_MINOR_VERSION_3  3 */ /*!< TLS v1.2 */
-    /* MBEDTLS_SSL_MINOR_VERSION_4  4 */ /*!< TLS v1.3 */
-    mbedtls_ssl_conf_min_version(conf, MBEDTLS_SSL_MAJOR_VERSION_3, min + 1);
-    mbedtls_ssl_conf_max_version(conf, MBEDTLS_SSL_MAJOR_VERSION_3, max + 1);
-#endif
 }
 
 __attribute_noinline__ static int tls_mbedtls_readfile(const char *path, u8 **buf, size_t *n);
@@ -791,95 +752,7 @@ static int tls_mbedtls_set_dhparams(struct tls_conf *tls_conf, const struct tls_
 
 /* reference: lighttpd src/mod_mbedtls.c:mod_mbedtls_ssl_append_curve()
  * (same author: gstrauss@gluelogic.com; same license: BSD-3-Clause) */
-#if MBEDTLS_VERSION_NUMBER < 0x03010000 /* mbedtls 3.1.0 */
-static int tls_mbedtls_append_curve(mbedtls_ecp_group_id *ids, int nids, int idsz, const mbedtls_ecp_group_id id)
-{
-    if (1 >= idsz - (nids + 1))
-    {
-        emsg(MSG_ERROR, "error: too many curves during list expand");
-        return -1;
-    }
-    ids[++nids] = id;
-    return nids;
-}
 
-static int tls_mbedtls_set_curves(struct tls_conf *tls_conf, const char *curvelist)
-{
-    mbedtls_ecp_group_id ids[512];
-    int nids                                       = -1;
-    const int idsz                                 = (int)(sizeof(ids) / sizeof(*ids) - 1);
-    const mbedtls_ecp_curve_info *const curve_info = mbedtls_ecp_curve_list();
-
-    for (const char *e = curvelist - 1; e;)
-    {
-        const char *const n         = e + 1;
-        e                           = os_strchr(n, ':');
-        size_t len                  = e ? (size_t)(e - n) : os_strlen(n);
-        mbedtls_ecp_group_id grp_id = MBEDTLS_ECP_DP_NONE;
-        switch (len)
-        {
-            case 5:
-                if (0 == os_memcmp("P-521", n, 5))
-                    grp_id = MBEDTLS_ECP_DP_SECP521R1;
-                else if (0 == os_memcmp("P-384", n, 5))
-                    grp_id = MBEDTLS_ECP_DP_SECP384R1;
-                else if (0 == os_memcmp("P-256", n, 5))
-                    grp_id = MBEDTLS_ECP_DP_SECP256R1;
-                break;
-            case 6:
-                if (0 == os_memcmp("BP-521", n, 6))
-                    grp_id = MBEDTLS_ECP_DP_BP512R1;
-                else if (0 == os_memcmp("BP-384", n, 6))
-                    grp_id = MBEDTLS_ECP_DP_BP384R1;
-                else if (0 == os_memcmp("BP-256", n, 6))
-                    grp_id = MBEDTLS_ECP_DP_BP256R1;
-                break;
-            default:
-                break;
-        }
-        if (grp_id != MBEDTLS_ECP_DP_NONE)
-        {
-            nids = tls_mbedtls_append_curve(ids, nids, idsz, grp_id);
-            if (-1 == nids)
-                return 0;
-            continue;
-        }
-        /* similar to mbedtls_ecp_curve_info_from_name() */
-        const mbedtls_ecp_curve_info *info;
-        for (info = curve_info; info->grp_id != MBEDTLS_ECP_DP_NONE; ++info)
-        {
-            if (0 == os_strncmp(info->name, n, len) && info->name[len] == '\0')
-                break;
-        }
-        if (info->grp_id == MBEDTLS_ECP_DP_NONE)
-        {
-            wpa_printf(MSG_ERROR, "MTLS: unrecognized curve: %.*s", (int)len, n);
-            return 0;
-        }
-
-        nids = tls_mbedtls_append_curve(ids, nids, idsz, info->grp_id);
-        if (-1 == nids)
-            return 0;
-    }
-
-    /* mod_openssl configures "prime256v1" if curve list not specified,
-     * but mbedtls provides a list of supported curves if not explicitly set */
-    if (-1 == nids)
-        return 1; /* empty list; no-op */
-
-    ids[++nids] = MBEDTLS_ECP_DP_NONE; /* terminate list */
-    ++nids;
-
-    /* curves list must be persistent for lifetime of mbedtls_ssl_config */
-    tls_conf->curves = os_malloc(nids * sizeof(mbedtls_ecp_group_id));
-    if (tls_conf->curves == NULL)
-        return 0;
-    os_memcpy(tls_conf->curves, ids, nids * sizeof(mbedtls_ecp_group_id));
-
-    mbedtls_ssl_conf_curves(&tls_conf->conf, tls_conf->curves);
-    return 1;
-}
-#else
 static int tls_mbedtls_append_curve(uint16_t *ids, int nids, int idsz, const uint16_t id)
 {
     if (1 >= idsz - (nids + 1))
@@ -970,7 +843,7 @@ static int tls_mbedtls_set_curves(struct tls_conf *tls_conf, const char *curveli
     mbedtls_ssl_conf_groups(&tls_conf->conf, tls_conf->curves);
     return 1;
 }
-#endif /* MBEDTLS_VERSION_NUMBER >= 0x03010000 */ /* mbedtls 3.1.0 */
+
 
 /* data copied from lighttpd src/mod_mbedtls.c (BSD-3-Clause) */
 static const int suite_AES_256_ephemeral[] = {
@@ -1613,13 +1486,8 @@ static int tls_mbedtls_set_certs(struct tls_conf *tls_conf, const struct tls_con
             return -1;
         }
         const char *pwd = params->private_key_passwd;
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000 /* mbedtls 3.0.0 */
         ret = mbedtls_pk_parse_key(&tls_conf->private_key, data, len, (const unsigned char *)pwd,
                                    pwd ? os_strlen(pwd) : 0, hostap_rng_fn, hostap_rng_ctx());
-#else
-        ret = mbedtls_pk_parse_key(&tls_conf->private_key, data, len, (const unsigned char *)pwd,
-                                   pwd ? os_strlen(pwd) : 0);
-#endif
         if (params->private_key)
         {
             forced_memzero(data, len);
@@ -2001,7 +1869,6 @@ int tls_connection_set_verify(void *tls_ctx,
     return 0;
 }
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000 /* mbedtls 3.0.0 */
 static void tls_connection_export_keys_cb(void *p_expkey,
                                           mbedtls_ssl_key_export_type secret_type,
                                           const unsigned char *secret,
@@ -2012,8 +1879,10 @@ static void tls_connection_export_keys_cb(void *p_expkey,
 {
     struct tls_connection *conn = p_expkey;
     conn->tls_prf_type          = tls_prf_type;
+#if !defined(MBEDTLS_SSL_PROTO_TLS1_3)
     if (!tls_prf_type)
         return;
+#endif
     if (secret_len > sizeof(conn->expkey_secret))
     {
         emsg(MSG_ERROR, "tls_connection_export_keys_cb secret too long");
@@ -2025,33 +1894,15 @@ static void tls_connection_export_keys_cb(void *p_expkey,
     os_memcpy(conn->expkey_randbytes, client_random, MBEDTLS_EXPKEY_RAND_LEN);
     os_memcpy(conn->expkey_randbytes + MBEDTLS_EXPKEY_RAND_LEN, server_random, MBEDTLS_EXPKEY_RAND_LEN);
 }
-#elif MBEDTLS_VERSION_NUMBER >= 0x02120000 /* mbedtls 2.18.0 */
-static int tls_connection_export_keys_cb(void *p_expkey,
-                                         const unsigned char *ms,
-                                         const unsigned char *kb,
-                                         size_t maclen,
-                                         size_t keylen,
-                                         size_t ivlen,
-                                         const unsigned char client_random[MBEDTLS_EXPKEY_RAND_LEN],
-                                         const unsigned char server_random[MBEDTLS_EXPKEY_RAND_LEN],
-                                         mbedtls_tls_prf_types tls_prf_type)
-{
-    struct tls_connection *conn = p_expkey;
-    conn->tls_prf_type          = tls_prf_type;
-    if (!tls_prf_type)
-        return -1; /*(return value ignored by mbedtls)*/
-    conn->expkey_keyblock_size = maclen + keylen + ivlen;
-    conn->expkey_secret_len    = MBEDTLS_EXPKEY_FIXED_SECRET_LEN;
-    os_memcpy(conn->expkey_secret, ms, MBEDTLS_EXPKEY_FIXED_SECRET_LEN);
-    os_memcpy(conn->expkey_randbytes, client_random, MBEDTLS_EXPKEY_RAND_LEN);
-    os_memcpy(conn->expkey_randbytes + MBEDTLS_EXPKEY_RAND_LEN, server_random, MBEDTLS_EXPKEY_RAND_LEN);
-    return 0;
-}
-#endif
+
 
 int tls_connection_get_random(void *tls_ctx, struct tls_connection *conn, struct tls_random *data)
 {
-    if (!conn || !conn->tls_prf_type)
+    if (!conn
+#if !defined(MBEDTLS_SSL_PROTO_TLS1_3)
+        || !conn->tls_prf_type
+#endif
+       )
         return -1;
     data->client_random     = conn->expkey_randbytes;
     data->client_random_len = MBEDTLS_EXPKEY_RAND_LEN;
@@ -2070,10 +1921,29 @@ int tls_connection_export_key(void *tls_ctx,
 {
     /* (EAP-PEAP EAP-TLS EAP-TTLS) */
 #if MBEDTLS_VERSION_NUMBER >= 0x02120000 /* mbedtls 2.18.0 */
-    return (conn && conn->established && conn->tls_prf_type) ?
-               mbedtls_ssl_tls_prf(conn->tls_prf_type, conn->expkey_secret, conn->expkey_secret_len, label,
-                                   conn->expkey_randbytes, sizeof(conn->expkey_randbytes), out, out_len) :
-               -1;
+    if (!conn || !conn->established)
+        return -1;
+
+#if defined(MBEDTLS_SSL_PROTO_TLS1_3)
+#if (MBEDTLS_VERSION_NUMBER >= 0x03040000)
+    if (conn->ssl.tls_version == MBEDTLS_SSL_VERSION_TLS1_3)
+    {
+        psa_algorithm_t hash_alg = mbedtls_md_psa_alg_from_type(
+                    (mbedtls_md_type_t)conn->ssl.handshake->ciphersuite_info->mac);
+        return mbedtls_ssl_tls13_hkdf_expand_label(hash_alg, conn->expkey_secret,
+                                                   conn->expkey_secret_len, (const unsigned char *)label,
+                                                   os_strlen(label), context,
+                                                   context_len, out, out_len);
+    }
+    else
+#endif
+#endif
+    {
+        return (conn->tls_prf_type) ?
+                   mbedtls_ssl_tls_prf(conn->tls_prf_type, conn->expkey_secret, conn->expkey_secret_len, label,
+                                       conn->expkey_randbytes, sizeof(conn->expkey_randbytes), out, out_len) :
+                   -1;
+    }
 #else
     /* not implemented here for mbedtls < 2.18.0 */
     return -1;
@@ -2082,7 +1952,6 @@ int tls_connection_export_key(void *tls_ctx,
 
 #ifdef TLS_MBEDTLS_EAP_FAST
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000 /* mbedtls 3.0.0 */
 /* keyblock size info is not exposed in mbed TLS 3.0.0 */
 /* extracted from mbedtls library/ssl_tls.c:ssl_tls12_populate_transform() */
 #include <mbedtls/ssl_ciphersuites.h>
@@ -2091,7 +1960,7 @@ static size_t tls_mbedtls_ssl_keyblock_size(mbedtls_ssl_context *ssl)
 {
 #if !defined(MBEDTLS_USE_PSA_CRYPTO) /* XXX: (not extracted for PSA crypto) */
 #if defined(MBEDTLS_SSL_PROTO_TLS1_3)
-    if (tls_version == MBEDTLS_SSL_VERSION_TLS1_3)
+    if (ssl->tls_version == MBEDTLS_SSL_VERSION_TLS1_3)
         return 0; /* (calculation not extracted) */
 #endif            /* MBEDTLS_SSL_PROTO_TLS1_3 */
 
@@ -2104,13 +1973,8 @@ static size_t tls_mbedtls_ssl_keyblock_size(mbedtls_ssl_context *ssl)
     if (cipher_info == NULL)
         return 0;
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03010000 /* mbedtls 3.1.0 */
     size_t keylen              = mbedtls_cipher_info_get_key_bitlen(cipher_info) / 8;
     mbedtls_cipher_mode_t mode = mbedtls_cipher_info_get_mode(cipher_info);
-#else
-    size_t keylen              = cipher_info->MBEDTLS_PRIVATE(key_bitlen) / 8;
-    mbedtls_cipher_mode_t mode = cipher_info->MBEDTLS_PRIVATE(mode);
-#endif
 #if defined(MBEDTLS_GCM_C) || defined(MBEDTLS_CCM_C) || defined(MBEDTLS_CHACHAPOLY_C)
     if (mode == MBEDTLS_MODE_GCM || mode == MBEDTLS_MODE_CCM)
         return keylen + 4;
@@ -2131,19 +1995,23 @@ static size_t tls_mbedtls_ssl_keyblock_size(mbedtls_ssl_context *ssl)
 #endif /* !MBEDTLS_USE_PSA_CRYPTO */ /* (not extracted for PSA crypto) */
     return 0;
 }
-#endif /* MBEDTLS_VERSION_NUMBER >= 0x03000000 */ /* mbedtls 3.0.0 */
+
 
 int tls_connection_get_eap_fast_key(void *tls_ctx, struct tls_connection *conn, u8 *out, size_t out_len)
 {
+    int ret;
+
     /* XXX: has export keys callback been run? */
-    if (!conn || !conn->tls_prf_type)
+    if (!conn
+#if !defined(MBEDTLS_SSL_PROTO_TLS1_3)
+        || !conn->tls_prf_type
+#endif
+        )
         return -1;
 
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000 /* mbedtls 3.0.0 */
     conn->expkey_keyblock_size = tls_mbedtls_ssl_keyblock_size(&conn->ssl);
     if (conn->expkey_keyblock_size == 0)
         return -1;
-#endif
     size_t skip            = conn->expkey_keyblock_size * 2;
     unsigned char *tmp_out = os_malloc(skip + out_len);
     if (!tmp_out)
@@ -2155,12 +2023,28 @@ int tls_connection_get_eap_fast_key(void *tls_ctx, struct tls_connection *conn, 
     os_memcpy(seed + MBEDTLS_EXPKEY_RAND_LEN, conn->expkey_randbytes, MBEDTLS_EXPKEY_RAND_LEN);
 
 #if MBEDTLS_VERSION_NUMBER >= 0x02120000 /* mbedtls 2.18.0 */
-    int ret = mbedtls_ssl_tls_prf(conn->tls_prf_type, conn->expkey_secret, conn->expkey_secret_len, "key expansion",
+    #if (MBEDTLS_VERSION_NUMBER >= 0x03040000)
+    if (conn->ssl.tls_version == MBEDTLS_SSL_VERSION_TLS1_3)
+    {
+        psa_algorithm_t hash_alg = mbedtls_md_psa_alg_from_type(
+                        (mbedtls_md_type_t)conn->ssl.handshake->ciphersuite_info->mac);
+        ret = mbedtls_ssl_tls13_hkdf_expand_label(hash_alg, conn->expkey_secret,
+                                                  conn->expkey_secret_len,
+                                                  (const unsigned char *)"key expansion",
+                                                  os_strlen("key expansion"), seed,
+                                                  sizeof(seed), tmp_out, skip + out_len);
+    }
+    else
+#endif
+    {
+        ret = mbedtls_ssl_tls_prf(conn->tls_prf_type, conn->expkey_secret,
+                                  conn->expkey_secret_len, "key expansion",
                                   seed, sizeof(seed), tmp_out, skip + out_len);
+    }
     if (ret == 0)
         os_memcpy(out, tmp_out + skip, out_len);
 #else
-    int ret = -1;         /*(not reached if not impl; return -1 at top of func)*/
+    ret = -1;         /*(not reached if not impl; return -1 at top of func)*/
 #endif
 
     bin_clear_free(tmp_out, skip + out_len);
@@ -2246,7 +2130,24 @@ struct wpabuf *tls_connection_handshake(void *tls_ctx,
 #endif
 
 #if MBEDTLS_VERSION_NUMBER >= 0x03020000 /* mbedtls 3.2.0 */
-    int ret = mbedtls_ssl_handshake(&conn->ssl);
+    int ret = 0;
+    if (conn->ssl.MBEDTLS_PRIVATE(state) == MBEDTLS_SSL_HANDSHAKE_OVER &&
+        conn->ssl.MBEDTLS_PRIVATE(tls_version) == MBEDTLS_SSL_VERSION_TLS1_3)
+    {
+        int res = 0;
+        *appl_data = wpabuf_alloc(wpabuf_len(in_data));
+        res = mbedtls_ssl_read(&conn->ssl, wpabuf_mhead(*appl_data), wpabuf_size(*appl_data));
+        if (res < 0)
+        {
+            wpa_printf(MSG_DEBUG, "%s failed: 0x%x", __func__, res);
+            wpabuf_free(*appl_data);
+            ret = -1;
+        }
+        else
+            wpabuf_put(*appl_data, res);
+    }
+    else
+        ret = mbedtls_ssl_handshake(&conn->ssl);
 #else
     int ret = 0;
     while (conn->ssl.MBEDTLS_PRIVATE(state) != MBEDTLS_SSL_HANDSHAKE_OVER)
@@ -2269,9 +2170,6 @@ struct wpabuf *tls_connection_handshake(void *tls_ctx,
             if (conn->push_buf == NULL)
                 /* Need to return something to get final TLS ACK. */
                 conn->push_buf = wpabuf_alloc(0);
-
-            if (appl_data /*&& conn->pull_buf && wpabuf_len(conn->pull_buf)*/)
-                *appl_data = NULL; /* RFE: check for application data */
             break;
         case MBEDTLS_ERR_SSL_WANT_WRITE:
         case MBEDTLS_ERR_SSL_WANT_READ:
@@ -2291,11 +2189,7 @@ struct wpabuf *tls_connection_handshake(void *tls_ctx,
                 case MBEDTLS_ERR_NET_SEND_FAILED:
                     ++conn->write_alerts;
                     break;
-#if MBEDTLS_VERSION_NUMBER >= 0x03000000 /* mbedtls 3.0.0 */
                 case MBEDTLS_ERR_SSL_HANDSHAKE_FAILURE:
-#else
-                case MBEDTLS_ERR_SSL_BAD_HS_SERVER_KEY_EXCHANGE:
-#endif
                     tls_mbedtls_suiteb_handshake_alert(conn);
                     /* fall through */
                 case MBEDTLS_ERR_NET_RECV_FAILED:
@@ -2617,25 +2511,12 @@ bool tls_connection_get_own_cert_used(struct tls_connection *conn)
 #ifndef TLS_MBEDTLS_CONFIG_FIPS
 #if defined(CONFIG_MODULE_TESTS)
 /* unused with CONFIG_TLS=mbedtls except in crypto_module_tests.c */
-#if MBEDTLS_VERSION_NUMBER >= 0x02120000   /* mbedtls 2.18.0 */ \
-    && MBEDTLS_VERSION_NUMBER < 0x03000000 /* mbedtls 3.0.0 */
-/* sha1-tlsprf.c */
-#include "sha1.h"
-int tls_prf_sha1_md5(
-    const u8 *secret, size_t secret_len, const char *label, const u8 *seed, size_t seed_len, u8 *out, size_t outlen)
-{
-    return mbedtls_ssl_tls_prf(MBEDTLS_SSL_TLS_PRF_TLS1, secret, secret_len, label, seed, seed_len, out, outlen) ? -1 :
-                                                                                                                   0;
-}
-#else
 #include "sha1-tlsprf.c" /* pull in hostap local implementation */
-#endif
 #endif
 #endif
 
 #ifdef TLS_MBEDTLS_TLS_PRF_SHA256
 /* sha256-tlsprf.c */
-#if MBEDTLS_VERSION_NUMBER >= 0x02120000 /* mbedtls 2.18.0 */
 #include "sha256.h"
 int tls_prf_sha256(
     const u8 *secret, size_t secret_len, const char *label, const u8 *seed, size_t seed_len, u8 *out, size_t outlen)
@@ -2644,14 +2525,10 @@ int tls_prf_sha256(
                -1 :
                0;
 }
-#else
-#include "sha256-tlsprf.c" /* pull in hostap local implementation */
-#endif
 #endif
 
 #ifdef TLS_MBEDTLS_TLS_PRF_SHA384
 /* sha384-tlsprf.c */
-#if MBEDTLS_VERSION_NUMBER >= 0x02120000 /* mbedtls 2.18.0 */
 #include "sha384.h"
 int tls_prf_sha384(
     const u8 *secret, size_t secret_len, const char *label, const u8 *seed, size_t seed_len, u8 *out, size_t outlen)
@@ -2660,16 +2537,11 @@ int tls_prf_sha384(
                -1 :
                0;
 }
-#else
-#include "sha384-tlsprf.c" /* pull in hostap local implementation */
-#endif
 #endif
 
 #ifdef TLS_MBEDTLS_CERT_VERIFY_EXTMATCH
 
-#if MBEDTLS_VERSION_NUMBER < 0x03020000 /* mbedtls 3.2.0 */
-#define mbedtls_x509_crt_has_ext_type(crt, ext_type) ((crt)->MBEDTLS_PRIVATE(ext_types) & (ext_type))
-#endif
+
 
 struct mlist
 {
