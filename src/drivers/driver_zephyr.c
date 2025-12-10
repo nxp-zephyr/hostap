@@ -22,6 +22,7 @@
 /* TODO: The timeout should be retrieved from the driver to keep it generic */
 #define SCAN_TIMEOUT 35
 #define GET_WIPHY_TIMEOUT 10
+#define COOKIE_RESP_EVENT_TIMEOUT 5000
 
 int wpa_drv_zep_send_mlme(void *priv, const u8 *data, size_t data_len, int noack,
 	unsigned int freq, const u16 *csa_offs, size_t csa_offs_len, int no_encrypt,
@@ -937,6 +938,15 @@ static int wpa_drv_mgmt_subscribe_non_ap(struct zep_drv_if_ctx *if_ctx)
 	if (wpa_drv_register_action_frame(if_ctx, (u8 *)"\x05\x00", 2) < 0)
 		ret = -1;
 
+#ifdef CONFIG_P2P
+	/* P2P Public Action */
+	if (wpa_drv_register_action_frame(if_ctx, (u8 *) "\x04\x09\x50\x6f\x9a\x09", 6) < 0)
+		ret = -1;
+	/* P2P Action */
+	if (wpa_drv_register_action_frame(if_ctx, (u8 *) "\x7f\x50\x6f\x9a\x09", 5) < 0)
+		ret = -1;
+#endif /* CONFIG_P2P */
+
 	return ret;
 }
 
@@ -961,6 +971,10 @@ static void wpa_drv_zep_event_mgmt_rx(struct zep_drv_if_ctx *if_ctx,
 	fc = le_to_host16(mgmt->frame_control);
 	stype = WLAN_FC_GET_STYPE(fc);
 
+	if (stype == WLAN_FC_STYPE_PROBE_REQ && !if_ctx->probe_req_listen) {
+		wpa_printf(MSG_MSGDUMP, "wpa_supp: Device not in probe req listen mode - ignore frame");
+		return;
+	}
 	os_memset(&event, 0, sizeof(event));
 
 	if (frequency) {
@@ -1012,6 +1026,48 @@ static void wpa_drv_zep_event_signal_change(struct zep_drv_if_ctx *if_ctx,
 					    union wpa_event_data *event)
 {
 	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx, EVENT_SIGNAL_CHANGE, event);
+}
+
+static void wpa_drv_zep_event_roc_complete(struct zep_drv_if_ctx *if_ctx,
+					    int freq, unsigned int duration, u64 cookie)
+{
+	union wpa_event_data event;
+
+	if (cookie != if_ctx->remain_on_channel_cookie) {
+		wpa_printf(MSG_DEBUG, "wpa_supp: No matching cookie found for ROC complete event");
+		return;
+	}
+
+	os_memset(&event, 0, sizeof(event));
+	event.remain_on_channel.freq = freq;
+	event.remain_on_channel.duration = duration;
+	wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx, EVENT_REMAIN_ON_CHANNEL, &event);
+
+}
+
+static void wpa_drv_zep_event_roc_cancel_complete(struct zep_drv_if_ctx *if_ctx,
+						   int freq, u64 cookie)
+{
+	union wpa_event_data event;
+
+	if (cookie == if_ctx->remain_on_channel_cookie) {
+		os_memset(&event, 0, sizeof(event));
+		event.remain_on_channel.freq = freq;
+		wpa_supplicant_event_wrapper(if_ctx->supp_if_ctx,
+			EVENT_CANCEL_REMAIN_ON_CHANNEL, &event);
+	}
+}
+
+static void wpa_drv_zep_event_cookie_event(struct zep_drv_if_ctx *if_ctx,
+					  u64 host_cookie, u64 cookie)
+{
+	if (if_ctx->pending_remain_on_channel) {
+		if_ctx->remain_on_channel_cookie = cookie;
+		if_ctx->pending_remain_on_channel = false;
+		k_sem_give(&if_ctx->drv_resp_sem);
+	} else {
+		wpa_printf(MSG_DEBUG, "wpa_supp: Unexpected cookie event received");
+	}
 }
 
 static struct hostapd_hw_modes *
@@ -1247,6 +1303,9 @@ static void *wpa_drv_zep_init(void *ctx,
 	callbk_fns.mac_changed = wpa_drv_zep_event_mac_changed;
 	callbk_fns.ecsa_complete = wpa_drv_zep_event_ecsa_complete;
 	callbk_fns.signal_change = wpa_drv_zep_event_signal_change;
+	callbk_fns.roc_complete = wpa_drv_zep_event_roc_complete;
+	callbk_fns.roc_cancel_complete = wpa_drv_zep_event_roc_cancel_complete;
+	callbk_fns.cookie_event = wpa_drv_zep_event_cookie_event;
 
 	if_ctx->dev_priv = dev_ops->init(if_ctx,
 					 ifname,
@@ -1261,6 +1320,9 @@ static void *wpa_drv_zep_init(void *ctx,
 	}
 
 	k_sem_init(&if_ctx->drv_resp_sem, 0, 1);
+	if_ctx->remain_on_channel_cookie = 0;
+	if_ctx->pending_remain_on_channel = false;
+	if_ctx->probe_req_set = false;
 
 	wpa_drv_mgmt_subscribe_non_ap(if_ctx);
 
@@ -2683,6 +2745,7 @@ int wpa_drv_zep_remain_on_channel(void *priv, unsigned int freq,
 {
 	struct zep_drv_if_ctx *if_ctx = NULL;
 	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	u64 host_cookie = 0;
 	int ret	= -1;
 
 	if (!priv) {
@@ -2697,9 +2760,17 @@ int wpa_drv_zep_remain_on_channel(void *priv, unsigned int freq,
 		goto out;
 	}
 
-	ret = dev_ops->remain_on_channel(if_ctx->dev_priv, freq, duration);
+	host_cookie = if_ctx->remain_on_channel_cookie++;
+	ret = dev_ops->remain_on_channel(if_ctx->dev_priv, freq, duration, host_cookie);
 	if (ret) {
 		wpa_printf(MSG_ERROR, "%s: dpp_listen op failed", __func__);
+		goto out;
+	}
+
+	if_ctx->pending_remain_on_channel = true;
+	ret = k_sem_take(&if_ctx->drv_resp_sem, K_MSEC(COOKIE_RESP_EVENT_TIMEOUT));
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: remain_on_channel wait failed", __func__);
 		goto out;
 	}
 
@@ -2725,12 +2796,48 @@ int wpa_drv_zep_cancel_remain_on_channel(void *priv)
 		goto out;
 	}
 
-	ret = dev_ops->cancel_remain_on_channel(if_ctx->dev_priv);
+	ret = dev_ops->cancel_remain_on_channel(if_ctx->dev_priv, if_ctx->remain_on_channel_cookie);
 	if (ret) {
-		wpa_printf(MSG_ERROR, "%s: dpp_listen op failed", __func__);
+		wpa_printf(MSG_ERROR, "%s: cancel_roc op failed", __func__);
 		goto out;
 	}
 
+out:
+	return ret;
+}
+
+int wpa_drv_zep_probe_req_report(void *priv, int report)
+{
+	struct zep_drv_if_ctx *if_ctx = NULL;
+	int ret = -1;
+
+	if (!priv) {
+		wpa_printf(MSG_ERROR, "%s: Invalid handle", __func__);
+		goto out;
+	}
+
+	if_ctx = priv;
+
+	if (!report) {
+		wpa_printf(MSG_DEBUG, "%s: Unregister probe request report", __func__);
+		if_ctx->probe_req_listen = false;
+		return 0;
+	}
+
+	if_ctx->probe_req_listen = true;
+	if(if_ctx->probe_req_set) {
+		wpa_printf(MSG_DEBUG, "%s: Probe request already registered", __func__);
+		return 0;
+	}
+
+	ret = wpa_drv_register_frame(priv, WLAN_FC_STYPE_PROBE_REQ << 4,
+							NULL, 0, 0);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: register probe req report failed", __func__);
+		goto out;
+	}
+
+	if_ctx->probe_req_set = true;
 out:
 	return ret;
 }
@@ -2756,6 +2863,35 @@ void wpa_drv_zep_send_action_cancel_wait(void *priv)
 
 out:
 	return;
+}
+
+static int wpa_drv_zep_set_p2p_powersave(void *priv, int legacy_ps, int opp_ps,
+				     int ctwindow)
+{
+	struct zep_drv_if_ctx *if_ctx = NULL;
+	const struct zep_wpa_supp_dev_ops *dev_ops = NULL;
+	int ret	= -1;
+
+	if (!priv) {
+		wpa_printf(MSG_ERROR, "%s: Invalid handle", __func__);
+		goto out;
+	}
+
+	if_ctx = priv;
+	dev_ops = get_dev_ops(if_ctx->dev_ctx);
+	if (!dev_ops || !dev_ops->set_p2p_powersave) {
+		wpa_printf(MSG_ERROR, "%s: set_p2p_powersave op not supported", __func__);
+		goto out;
+	}
+
+	ret = dev_ops->set_p2p_powersave(if_ctx->dev_priv, legacy_ps, opp_ps, ctwindow);
+	if (ret) {
+		wpa_printf(MSG_ERROR, "%s: set_p2p_powersave op failed", __func__);
+		goto out;
+	}
+
+out:
+	return ret;
 }
 
 const struct wpa_driver_ops wpa_driver_zep_ops = {
@@ -2807,5 +2943,7 @@ const struct wpa_driver_ops wpa_driver_zep_ops = {
 	.dpp_listen = wpa_drv_zep_dpp_listen,
 	.remain_on_channel = wpa_drv_zep_remain_on_channel,
 	.cancel_remain_on_channel = wpa_drv_zep_cancel_remain_on_channel,
+	.probe_req_report = wpa_drv_zep_probe_req_report,
 	.send_action_cancel_wait = wpa_drv_zep_send_action_cancel_wait,
+	.set_p2p_powersave = wpa_drv_zep_set_p2p_powersave,
 };
