@@ -971,7 +971,7 @@ static void wpa_drv_zep_event_mgmt_rx(struct zep_drv_if_ctx *if_ctx,
 	fc = le_to_host16(mgmt->frame_control);
 	stype = WLAN_FC_GET_STYPE(fc);
 
-	if (stype == WLAN_FC_STYPE_PROBE_REQ && !if_ctx->probe_req_listen) {
+	if (stype == WLAN_FC_STYPE_PROBE_REQ && !if_ctx->probe_req_listen && !if_ctx->ap_probe_req_listen) {
 		wpa_printf(MSG_MSGDUMP, "wpa_supp: Device not in probe req listen mode - ignore frame");
 		return;
 	}
@@ -1323,6 +1323,7 @@ static void *wpa_drv_zep_init(void *ctx,
 	if_ctx->remain_on_channel_cookie = 0;
 	if_ctx->pending_remain_on_channel = false;
 	if_ctx->probe_req_set = false;
+	if_ctx->ap_probe_req_listen = false;
 
 	wpa_drv_mgmt_subscribe_non_ap(if_ctx);
 
@@ -2203,7 +2204,20 @@ static int register_mgmt_frames_ap(struct zep_drv_if_ctx *if_ctx)
 			wpa_printf(MSG_ERROR, "%s: register_mgmt_frame op failed", __func__);
 			goto out;
 		}
+		if (stypes[i] == WLAN_FC_STYPE_PROBE_REQ) {
+			if_ctx->ap_probe_req_listen = true;
+		}
 	}
+#ifdef CONFIG_P2P
+        /* P2P Public Action */
+        if (wpa_drv_register_action_frame(if_ctx, (u8 *) "\x04\x09\x50\x6f\x9a\x09", 6) < 0) {
+                ret = -1;
+        }
+        /* P2P Action */
+        if (wpa_drv_register_action_frame(if_ctx, (u8 *) "\x7f\x50\x6f\x9a\x09", 5) < 0) {
+                ret = -1;
+        }
+#endif /* CONFIG_P2P */
 
 out:
 	return ret;
@@ -2419,6 +2433,7 @@ int wpa_drv_zep_deinit_ap(void *priv)
 		wpa_printf(MSG_ERROR, "%s: deinit_ap op failed: %d", __func__, ret);
 		goto out;
 	}
+	if_ctx->ap_probe_req_listen = false;
 
 out:
 	if (if_ctx) {
