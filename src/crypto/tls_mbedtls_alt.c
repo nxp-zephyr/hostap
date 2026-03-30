@@ -682,7 +682,6 @@ static void tls_mbedtls_set_allowed_tls_vers(struct tls_conf *tls_conf, mbedtls_
     /* mbed TLS 3.0.0 removes support for protocols < TLSv1.2 */
     if (min < 2 || max < 2)
     {
-        emsg(MSG_ERROR, "invalid tls_disable_tlsv* params; ignoring");
         if (min < 2)
             min = 2;
         if (max < 2)
@@ -1441,8 +1440,8 @@ static int tls_mbedtls_set_certs(struct tls_conf *tls_conf, const struct tls_con
 static const mbedtls_x509_crt_profile tls_mbedtls_crt_profile_suiteb128 = {
     /* Only SHA-256 and 384 */
     MBEDTLS_X509_ID_FLAG(MBEDTLS_MD_SHA256) | MBEDTLS_X509_ID_FLAG(MBEDTLS_MD_SHA384),
-    /* Only ECDSA */
-    MBEDTLS_X509_ID_FLAG(MBEDTLS_PK_SIGALG_ECDSA),
+    /* Only ECDSA and ECKEY */
+    MBEDTLS_X509_ID_FLAG(MBEDTLS_PK_SIGALG_ECDSA) | MBEDTLS_X509_ID_FLAG(MBEDTLS_PK_SIGALG_ECDSA + 1),
 #if defined(MBEDTLS_ECP_C)
     /* Only NIST P-256 and P-384 */
     MBEDTLS_X509_ID_FLAG(MBEDTLS_ECP_DP_SECP256R1) | MBEDTLS_X509_ID_FLAG(MBEDTLS_ECP_DP_SECP384R1),
@@ -1458,8 +1457,8 @@ static const mbedtls_x509_crt_profile tls_mbedtls_crt_profile_suiteb128 = {
 static const mbedtls_x509_crt_profile tls_mbedtls_crt_profile_suiteb192 = {
     /* Only SHA-384 */
     MBEDTLS_X509_ID_FLAG(MBEDTLS_MD_SHA384),
-    /* Only ECDSA */
-    MBEDTLS_X509_ID_FLAG(MBEDTLS_PK_SIGALG_ECDSA),
+    /* Only ECDSA and ECKEY */
+    MBEDTLS_X509_ID_FLAG(MBEDTLS_PK_SIGALG_ECDSA) | MBEDTLS_X509_ID_FLAG(MBEDTLS_PK_SIGALG_ECDSA + 1),
 #if defined(MBEDTLS_ECP_C)
     /* Only NIST P-384 */
     MBEDTLS_X509_ID_FLAG(MBEDTLS_ECP_DP_SECP384R1),
@@ -1579,9 +1578,8 @@ static int tls_mbedtls_set_params(struct tls_conf *tls_conf, const struct tls_co
     else if (tls_conf->flags & TLS_CONN_SUITEB)
     {
         /* special-case a select set of ciphers for hwsim tests */
-        if (!tls_mbedtls_set_ciphers(tls_conf, (tls_conf->flags & TLS_CONN_SUITEB_NO_ECDH) ?
-                                                   "DHE-RSA-AES256-GCM-SHA384" :
-                                                   "ECDHE-RSA-AES256-GCM-SHA384:DHE-RSA-AES256-GCM-SHA384"))
+        /* DHE-RSA-AES256-GCM-SHA384 is removed in Mbed TLS 4.0 */
+        if (!tls_mbedtls_set_ciphers(tls_conf, "ECDHE-RSA-AES256-GCM-SHA384"))
             return -1;
     }
 
